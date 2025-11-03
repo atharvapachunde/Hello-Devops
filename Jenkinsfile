@@ -11,7 +11,7 @@ pipeline {
         stage('Build Docker Image') {
             steps {
                 echo '🛠 Building Docker image...'
-                bat 'docker build -t hello-devops:latest .'
+                bat 'docker build -t hello-devops:11 .'
             }
         }
 
@@ -58,4 +58,5 @@ pipeline {
         }
     }
 }
+
 
