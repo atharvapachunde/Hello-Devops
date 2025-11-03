@@ -1,85 +1,60 @@
 pipeline {
-  agent any
+    agent any
 
-  environment {
-    IMAGE = "hello-devops:${BUILD_NUMBER}"
-    CONTAINER = "hello-devops-${BUILD_NUMBER}"
-    HOST_PORT = "5000"
-    APP_PORT = "5000"
-  }
-
-  stages {
-    stage('Checkout') {
-      steps { checkout scm }
-    }
-
-    stage('Build image') {
-      steps {
-        echo "Building image ${env.IMAGE}"
-        bat "docker build -t ${env.IMAGE} ."
-      }
-    }
-
-    stage('Stop any old container & Run') {
-      steps {
-        script {
-          echo "Removing old container (if exists)"
-          // remove by name if present; ignore errors
-          bat '''
-            @echo off
-            for /f "tokens=*" %%C in ('docker ps -a --filter "name=%CONTAINER%" --format "%%{{.Names}}"') do (
-              if "%%C"=="%CONTAINER%" docker rm -f %CONTAINER% || echo remove-failed
-            )
-          '''
-          echo "Also remove any container using host port %HOST_PORT% (to avoid bind errors)"
-          bat '''
-            @echo off
-            for /f "tokens=1" %%I in ('docker ps -a --format "%%{{.ID}} %%{{.Names}} %%{{.Ports}}" ^| findstr /C::%HOST_PORT%->') do (
-              echo removing %%I
-              docker rm -f %%I || echo remove-failed-%%I
-            )
-          '''
-          echo "Starting new container"
-          bat "docker run -d --name %CONTAINER% -p %HOST_PORT%:%APP_PORT% %IMAGE%"
-          echo "Waiting a few seconds for the app to start..."
-          bat "timeout /t 6 /nobreak >nul"
+    stages {
+        stage('Checkout') {
+            steps {
+                git branch: 'main', url: 'https://github.com/atharvapachunde/Hello-Devops.git'
+            }
         }
-      }
-    }
 
-    stage('Smoke test') {
-      steps {
-        script {
-          echo "Trying to reach http://localhost:%HOST_PORT% (retries)..." 
-          def ok = false
-          for (int i = 1; i <= 6; i++) {
-            echo "Attempt ${i}"
-            // Use PowerShell to request the page and save to output.html (works even without curl)
-            def rc = bat(
-              script: 'powershell -Command "try { (Invoke-WebRequest -UseBasicParsing -Uri http://localhost:%HOST_PORT% -TimeoutSec 5).Content | Out-File output.html; exit 0 } catch { exit 1 }"',
-              returnStatus: true
-            )
-            if (rc == 0) { ok = true; break }
-            bat "timeout /t 3 /nobreak >nul"
-          }
-
-          if (ok) {
-            echo "Smoke test PASSED — showing head of output.html"
-            bat "type output.html | more"
-            archiveArtifacts artifacts: 'output.html', allowEmptyArchive: true
-          } else {
-            echo "Smoke test FAILED — printing container status and logs"
-            bat "docker ps -a --filter name=%CONTAINER% --format \"table {{.ID}}\\t{{.Names}}\\t{{.Status}}\\t{{.Ports}}\" || echo no-container"
-            bat "docker logs %CONTAINER% --tail 200 || echo no-logs"
-            archiveArtifacts artifacts: 'output.html', allowEmptyArchive: true
-            error("Smoke test failed: could not reach http://localhost:%HOST_PORT%")
-          }
+        stage('Build Docker Image') {
+            steps {
+                echo '🛠 Building Docker image...'
+                bat 'docker build -t hello-devops:latest .'
+            }
         }
-      }
-    }
-  }
 
-  post {
-    always { echo "Pipeline finished." }
-  }
+        stage('Run Docker Container') {
+            steps {
+                echo '🚀 Running Docker container...'
+                bat '''
+                for /F "tokens=*" %%i in ('docker ps -aq -f "name=mystifying_kilby"') do (
+                    docker stop %%i  
+                    docker rm %%i
+                )
+                docker run -d -p 5000:5000 --name hello-devops-11 hello-devops:latest
+                REM Wait for container to start
+                ping 127.0.0.1 -n 6 >nul
+                '''
+            }
+        }
+
+        stage('Health Check') {
+            steps {
+                echo '🩺 Checking health...'
+                script {
+                    def result = bat(returnStatus: true, script: 'curl -s http://localhost:5000 >nul')
+                    if (result != 0) {
+                        error("❌ Health check failed! App not reachable.")
+                    } else {
+                        echo "✅ Flask app is up and reachable!"
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            echo "📋 Showing container logs:"
+            bat 'docker logs mystifying_kilby || echo No logs found'
+        }
+        success {
+            echo "🎉 Build & container ran successfully!"
+        }
+        failure {
+            echo "⚠ Build failed — check above logs."
+        }
+    }
 }
