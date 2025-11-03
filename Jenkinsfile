@@ -19,11 +19,11 @@ pipeline {
             steps {
                 echo '🚀 Running Docker container...'
                 bat '''
-                for /F "tokens=*" %%i in ('docker ps -aq -f "name=mystifying_kilby"') do (
+                for /F "tokens=*" %%i in ('docker ps -aq -f "name=hello-devops-11"') do (
                     docker stop %%i  
                     docker rm %%i
                 )
-                docker run -d -p 5000:5000 --name hello-devops-11 hello-devops:latest
+                docker run -d -p 5000:5000 --name hello-devops-11 hello-devops:11
                 REM Wait for container to start
                 ping 127.0.0.1 -n 6 >nul
                 '''
@@ -58,3 +58,4 @@ pipeline {
         }
     }
 }
+
